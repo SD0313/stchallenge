@@ -1,0 +1,55 @@
+# Data augmentation scripts and generated files
+remove_dates.py
+add_start_times.py
+fine-dining-dataset-augmented.json
+
+# Python and FastAPI
+__pycache__/
+*.py[cod]
+*$py.class
+dist/
+build/
+*.egg-info/
+
+# FastAPI specific
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.venv/
+venv/
+ENV/
+
+# Node and Remix
+node_modules/
+.npm
+.env
+dist/
+build/
+.cache/
+
+# Remix specific
+public/build
+api/_build
+.cache/
+.env
+.vercel
+.output
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+*.temp
+.coverage
+coverage/
+.pytest_cache/
+__debug__/
