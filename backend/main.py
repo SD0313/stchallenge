@@ -87,12 +87,15 @@ Reservations:
 Rules for assignment:
 1. Each waiter should have an approximately even number of tables
 2. Minimize time overlaps in each waiter's assignments
-3. Consider the number of people and complexity of orders
+3. Consider the number of people
 4. Return the assignments in JSON format with waiter_id as key and list of assigned reservations
 
 Provide only the JSON response, no additional text."""
 
     try:
+        print("\nPrompt sent to OpenAI:")
+        print(prompt)
+
         response = await openai.ChatCompletion.acreate(
             model="gpt-4",
             messages=[{
@@ -106,16 +109,35 @@ Provide only the JSON response, no additional text."""
             max_tokens=2000
         )
         
+        print("\nResponse from OpenAI:")
+        response_text = response.choices[0].message.content.strip()
+        print(response_text)
+        
         # Parse the response and validate
-        assignments = json.loads(response.choices[0].message.content)
-        return assignments
+        assignments = json.loads(response_text)
+        print("\nParsed assignments:")
+        print(json.dumps(assignments, indent=2))
+        
+        # Ensure all waiter IDs are present and have a list of assignments
+        formatted_assignments = {}
+        for waiter_id in waiter_ids:
+            waiter_str_id = str(waiter_id)
+            formatted_assignments[waiter_id] = assignments.get(waiter_str_id, [])
+        
+        print("\nFormatted assignments:")
+        print(json.dumps(formatted_assignments, indent=2))
+        
+        return formatted_assignments
         
     except Exception as e:
         print(f"Error in OpenAI call: {e}")
+        print("Falling back to round-robin assignment")
         # Fallback: Simple round-robin assignment
         assignments = {}
         for i, waiter_id in enumerate(waiter_ids):
             assignments[waiter_id] = reservations[i::len(waiter_ids)]
+        print("\nRound-robin assignments:")
+        print(json.dumps(assignments, indent=2))
         return assignments
 
 # Define models
@@ -163,6 +185,54 @@ async def load_data():
         # Initialize with empty data to prevent crashes
         app.state.dining_data = {"diners": []}
     app.state.table_assignments = {}
+
+def detect_special_event(email_content: str) -> bool:
+    # List of keywords that indicate special events
+    special_event_keywords = [
+        'birthday', 'anniversary', 'celebration', 'promotion',
+        'graduate', 'graduation', 'engagement', 'wedding',
+        'retirement', 'congratulation', 'achievement',
+        'special occasion', 'milestone', 'commemorate',
+        'honor', 'celebrate', 'party', 'ceremony'
+    ]
+    
+    # Convert to lowercase for case-insensitive matching
+    email_lower = email_content.lower()
+    
+    # Check for any keyword in the email
+    return any(keyword in email_lower for keyword in special_event_keywords)
+
+@app.get("/daily-stats")
+def get_daily_stats():
+    if not hasattr(app.state, "dining_data"):
+        return {
+            "total_reservations": 0,
+            "total_guests": 0,
+            "special_events": 0
+        }
+
+    total_reservations = 0
+    total_guests = 0
+    special_events = 0
+
+    # Process each diner's data
+    for diner in app.state.dining_data.get("diners", []):
+        # Count reservations and guests
+        reservations = diner.get("reservations", [])
+        total_reservations += len(reservations)
+        total_guests += sum(r.get("number_of_people", 0) for r in reservations)
+
+        # Check emails for special events
+        for email in diner.get("emails", []):
+            if detect_special_event(email.get("combined_thread", "")):
+                special_events += 1
+                break  # Only count one special event per diner
+
+    return {
+        "total_reservations": total_reservations,
+        "total_guests": total_guests,
+        "special_events": special_events
+    }
 
 @app.get("/dining-data")
 async def get_dining_data():
@@ -213,7 +283,7 @@ async def get_attendance():
     
     # Include table assignments if they exist
     assignments = []
-    if hasattr(app.state, "table_assignments"):
+    if hasattr(app.state, "table_assignments") and app.state.table_assignments:
         for waiter_id in app.state.attendance:
             # Sort tables by time
             tables = sorted(

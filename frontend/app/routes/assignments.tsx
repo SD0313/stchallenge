@@ -19,16 +19,32 @@ interface Assignment {
   tables: Table[];
 }
 
+interface DailyStats {
+  total_reservations: number;
+  total_guests: number;
+  special_events: number;
+}
+
 interface LoaderData {
   assignments?: Assignment[];
+  stats?: DailyStats;
   error?: string;
 }
 
 export const loader = async () => {
   try {
-    const response = await fetch('http://localhost:8000/attendance');
-    const data = await response.json();
-    return json<LoaderData>({ assignments: data.assignments });
+    const [attendanceResponse, statsResponse] = await Promise.all([
+      fetch('http://localhost:8001/attendance'),
+      fetch('http://localhost:8001/daily-stats')
+    ]);
+    const [attendanceData, statsData] = await Promise.all([
+      attendanceResponse.json(),
+      statsResponse.json()
+    ]);
+    return json<LoaderData>({
+      assignments: attendanceData.assignments,
+      stats: statsData
+    });
   } catch (error) {
     return json<LoaderData>({ error: 'Failed to fetch assignments' });
   }
@@ -40,7 +56,7 @@ const formatTime = (timeStr: string) => {
 };
 
 export default function Assignments() {
-  const { assignments, error } = useLoaderData<typeof loader>();
+  const { assignments, stats, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
 
   // Tables are already sorted by time from the backend
@@ -80,6 +96,26 @@ export default function Assignments() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {stats && (
+          <div className="mb-8 bg-white rounded-lg shadow-lg border border-[#e2d9c8] p-6">
+            {/* <h3 className="text-2xl font-serif text-[#2c1810] text-center mb-6">Today's Customers at a Glance</h3> */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+              <div className="p-4 rounded-lg bg-[#faf7f2]">
+                <div className="text-4xl font-bold text-[#2c1810]">{stats.total_reservations}</div>
+                <div className="text-sm font-medium text-[#65544a] mt-2">Today's Reservations</div>
+              </div>
+              <div className="p-4 rounded-lg bg-[#faf7f2]">
+                <div className="text-4xl font-bold text-[#2c1810]">{stats.total_guests}</div>
+                <div className="text-sm font-medium text-[#65544a] mt-2">Expected Guests</div>
+              </div>
+              <div className="p-4 rounded-lg bg-[#faf7f2]">
+                <div className="text-4xl font-bold text-[#2c1810]">{stats.special_events}</div>
+                <div className="text-sm font-medium text-[#65544a] mt-2">Special Events</div>
+              </div>
+            </div>
+            {/* <p className="text-sm text-[#8b7355] text-center mt-6">Let's get started!</p> */}
+          </div>
+        )}
         <div className="mb-16 bg-white overflow-hidden shadow-lg rounded-lg border border-[#e2d9c8] p-8 space-y-8">
           <div className="flex items-center justify-center mb-6">
             <div className="h-12 w-12 rounded-full bg-[#2c1810] bg-opacity-5 flex items-center justify-center mr-4">
