@@ -5,14 +5,14 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import json
 import os
-import openai
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 # Configure OpenAI
-openai.api_key = os.getenv('OPENAI_API_KEY')
+from openai import AsyncOpenAI
+client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 app = FastAPI(title="French Laudure API")
 
@@ -30,9 +30,9 @@ app.state.table_assignments = {}
 
 def get_waiter_name(waiter_id: int) -> str:
     waiters = {
-        1: "Jean-Pierre Dubois",
-        2: "Marie-Claire Laurent",
-        3: "François Moreau",
+        1: "Sauman Das",
+        2: "Danny Bessonov",
+        3: "Justin Zhou",
         4: "Amélie Rousseau",
         5: "Philippe Lefebvre",
         6: "Sophie Beaumont",
@@ -55,6 +55,40 @@ def parse_time(time_str: str) -> datetime:
             print(f"Error parsing time {time_str}: {e}")
             raise
 
+async def extract_allergies(diner: dict, reservation: dict) -> str:
+    # Combine relevant information for allergy detection
+    email_content = '\n'.join(email.get('combined_thread', '') for email in diner.get('emails', []))
+    dietary_tags = [item.get('dietary_tags', []) for item in reservation.get('orders', [])]
+    dietary_tags = [tag for sublist in dietary_tags for tag in sublist]  # flatten
+    reviews = diner.get('reviews', [])
+    review_texts = [review.get('text', '') for review in reviews]
+    
+    prompt = f"""Given the following information about a restaurant reservation, identify any allergies or dietary restrictions mentioned. 
+    If no allergies are mentioned, respond with 'No Allergies'. Be concise and only list the allergies.
+
+    Email Content: {email_content}
+    Dietary Tags from Orders: {', '.join(dietary_tags)}
+    Previous Reviews: {'. '.join(review_texts)}
+    """
+
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system",
+                "content": "You are a helpful assistant that identifies allergies and dietary restrictions from restaurant reservation data. Only output the allergies/restrictions or 'No Allergies' if none are found."
+            }, {
+                "role": "user",
+                "content": prompt
+            }],
+            max_tokens=100,
+            temperature=0.7
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error extracting allergies: {e}\n --------")
+        return "No Allergies"
+
 def extract_reservations(dining_data: dict) -> List[dict]:
     reservations = []
     for diner in dining_data.get("diners", []):
@@ -66,7 +100,10 @@ def extract_reservations(dining_data: dict) -> List[dict]:
                     "diner_name": diner["name"],
                     "start_time": time.strftime("%I:%M %p").lstrip('0'),  # Convert to 12-hour format, remove leading 0
                     "number_of_people": reservation["number_of_people"],
-                    "orders": reservation["orders"]
+                    "orders": reservation["orders"],
+                    "allergies": "Loading...",  # Will be populated later
+                    "_diner_data": diner,  # Temporary field for allergy extraction
+                    "_reservation_data": reservation  # Temporary field for allergy extraction
                 })
             except Exception as e:
                 print(f"Error processing reservation for {diner['name']}: {e}")
@@ -96,7 +133,7 @@ Provide only the JSON response, no additional text."""
         print("\nPrompt sent to OpenAI:")
         print(prompt)
 
-        response = await openai.ChatCompletion.acreate(
+        response = await client.chat.completions.create(
             model="gpt-4",
             messages=[{
                 "role": "system",
@@ -290,6 +327,22 @@ async def get_attendance():
                 app.state.table_assignments.get(waiter_id, []),
                 key=lambda x: parse_time(x["start_time"]).strftime("%H:%M")
             )
+            
+            # Initialize allergies as loading state
+            for table in tables:
+                if "_diner_data" in table and "_reservation_data" in table:
+                    table["allergies"] = "Loading..."
+                    # Keep the diner and reservation data for later use
+                    if not hasattr(app.state, "diner_reservations"):
+                        app.state.diner_reservations = {}
+                    app.state.diner_reservations[table["diner_name"]] = {
+                        "diner": table["_diner_data"],
+                        "reservation": table["_reservation_data"]
+                    }
+                    # Remove temporary fields
+                    del table["_diner_data"]
+                    del table["_reservation_data"]
+            
             assignments.append({
                 "waiter_id": waiter_id,
                 "waiter_name": get_waiter_name(waiter_id),
@@ -300,6 +353,19 @@ async def get_attendance():
         "waiter_ids": app.state.attendance,
         "assignments": assignments
     }
+
+@app.get("/allergies/{diner_name}")
+async def get_allergies(diner_name: str):
+    try:
+        if not hasattr(app.state, "diner_reservations") or diner_name not in app.state.diner_reservations:
+            raise HTTPException(status_code=404, detail="Diner not found")
+
+        diner_data = app.state.diner_reservations[diner_name]
+        allergies = await extract_allergies(diner_data["diner"], diner_data["reservation"])
+        return {"allergies": allergies}
+    except Exception as e:
+        print(f"Error getting allergies: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

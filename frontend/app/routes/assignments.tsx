@@ -6,6 +6,7 @@ interface Table {
   diner_name: string;
   number_of_people: number;
   start_time: string;
+  allergies: string;
   orders: Array<{
     item: string;
     dietary_tags: string[];
@@ -34,8 +35,8 @@ interface LoaderData {
 export const loader = async () => {
   try {
     const [attendanceResponse, statsResponse] = await Promise.all([
-      fetch('http://localhost:8001/attendance'),
-      fetch('http://localhost:8001/daily-stats')
+      fetch('http://localhost:8000/attendance'),
+      fetch('http://localhost:8000/daily-stats')
     ]);
     const [attendanceData, statsData] = await Promise.all([
       attendanceResponse.json(),
@@ -58,6 +59,8 @@ const formatTime = (timeStr: string) => {
 export default function Assignments() {
   const { assignments, stats, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const [expandedTables, setExpandedTables] = useState<{[key: string]: boolean}>({});
+  const [allergies, setAllergies] = useState<{[key: string]: string}>({});
 
   // Tables are already sorted by time from the backend
   const sortedAssignments = assignments;
@@ -98,7 +101,6 @@ export default function Assignments() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {stats && (
           <div className="mb-8 bg-white rounded-lg shadow-lg border border-[#e2d9c8] p-6">
-            {/* <h3 className="text-2xl font-serif text-[#2c1810] text-center mb-6">Today's Customers at a Glance</h3> */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
               <div className="p-4 rounded-lg bg-[#faf7f2]">
                 <div className="text-4xl font-bold text-[#2c1810]">{stats.total_reservations}</div>
@@ -113,7 +115,6 @@ export default function Assignments() {
                 <div className="text-sm font-medium text-[#65544a] mt-2">Special Events</div>
               </div>
             </div>
-            {/* <p className="text-sm text-[#8b7355] text-center mt-6">Let's get started!</p> */}
           </div>
         )}
         <div className="mb-16 bg-white overflow-hidden shadow-lg rounded-lg border border-[#e2d9c8] p-8 space-y-8">
@@ -142,19 +143,98 @@ export default function Assignments() {
                 </div>
                 
                 <div className="divide-y divide-[#e2d9c8]">
-                  {assignment.tables.map((table, index) => (
-                    <div key={index} className="py-3 first:pt-0 last:pb-0">
-                      <div className="flex justify-between items-center gap-4">
-                        <div>
-                          <div className="text-[#2c1810] font-medium">{table.diner_name}</div>
-                          <div className="text-sm text-[#65544a]">Party of {table.number_of_people}</div>
-                        </div>
-                        <div className="text-sm font-medium text-[#8b7355] tabular-nums">
-                          {formatTime(table.start_time)}
-                        </div>
+                  {assignment.tables.map((table, index) => {
+                    const tableKey = `${assignment.waiter_id}-${index}`;
+                    const isExpanded = expandedTables[tableKey];
+                    
+                    return (
+                      <div key={index} className="py-3 first:pt-0 last:pb-0">
+                        <button 
+                          onClick={async () => {
+                            setExpandedTables(prev => {
+                              const newState = { ...prev, [tableKey]: !prev[tableKey] };
+                              
+                              // If expanding and allergies haven't been loaded
+                              if (newState[tableKey] && !allergies[tableKey]) {
+                                // Load allergies
+                                fetch(`http://localhost:8000/allergies/${encodeURIComponent(table.diner_name)}`)
+                                .then(response => response.json())
+                                .then(data => {
+                                  setAllergies(prev => ({
+                                    ...prev,
+                                    [tableKey]: data.allergies
+                                  }));
+                                })
+                                .catch(error => {
+                                  console.error('Error fetching allergies:', error);
+                                  setAllergies(prev => ({
+                                    ...prev,
+                                    [tableKey]: 'Error loading allergies'
+                                  }));
+                                });
+                              }
+                              
+                              return newState;
+                            });
+                          }}
+                          className="w-full text-left"
+                        >
+                          <div className="flex justify-between items-center gap-4">
+                            <div>
+                              <div className="text-[#2c1810] font-medium group-hover:text-[#65544a]">
+                                <span>{table.diner_name}</span>
+                                <span className="ml-2">
+                                  {isExpanded ? (
+                                    <svg className="w-4 h-4 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-4 h-4 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  )}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 mt-1">
+                                {[...Array(table.number_of_people)].map((_, i) => (
+                                  <svg key={i} className="w-4 h-4 text-[#65544a]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                  </svg>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="text-sm font-medium text-[#8b7355] tabular-nums">
+                              {formatTime(table.start_time)}
+                            </div>
+                          </div>
+                        </button>
+                        
+                        {isExpanded && (
+                          <div className="mt-3 pl-4 border-l-2 border-[#e2d9c8]">
+                            <div className="text-sm">
+                              <div className="mb-2">
+                                <span className="font-medium text-[#2c1810]">Allergies/Dietary Restrictions:</span>
+                                <span className="ml-2 text-[#65544a]">{allergies[tableKey] || table.allergies}</span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-[#2c1810]">Orders:</span>
+                                <ul className="mt-1 space-y-1">
+                                  {table.orders.map((order, i) => (
+                                    <li key={i} className="text-[#65544a]">
+                                      {order.item}
+                                      {order.dietary_tags.length > 0 && (
+                                        <span className="text-[#8b7355] ml-2">({order.dietary_tags.join(', ')})</span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ))}

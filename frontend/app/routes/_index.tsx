@@ -45,8 +45,8 @@ export const loader = async () => {
   try {
     const [diningResponse, attendanceResponse, statsResponse] = await Promise.all([
       fetch('http://localhost:8000/dining-data'),
-      fetch('http://localhost:8001/attendance'),
-      fetch('http://localhost:8001/daily-stats')
+      fetch('http://localhost:8000/attendance'),
+      fetch('http://localhost:8000/daily-stats')
     ]);
     const [diningData, attendanceData, statsData] = await Promise.all([
       diningResponse.json(),
@@ -71,9 +71,9 @@ export default function Index() {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const waiters = [
-    { id: 1, name: "Jean-Pierre Dubois" },
-    { id: 2, name: "Marie-Claire Laurent" },
-    { id: 3, name: "François Moreau" },
+    { id: 1, name: "Sauman Das" },
+    { id: 2, name: "Danny Bessonov" },
+    { id: 3, name: "Justin Zhou" },
     { id: 4, name: "Amélie Rousseau" },
     { id: 5, name: "Philippe Lefebvre" },
     { id: 6, name: "Sophie Beaumont" },
@@ -104,7 +104,7 @@ export default function Index() {
     setSubmitError(null);
 
     try {
-      const response = await fetch('http://localhost:8001/attendance', {
+      const response = await fetch('http://localhost:8000/attendance', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
