@@ -17,6 +17,7 @@ interface Table {
 interface Assignment {
   waiter_id: number;
   waiter_name: string;
+  summary: string;
   tables: Table[];
 }
 
@@ -129,7 +130,7 @@ export default function Assignments() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {sortedAssignments?.map((assignment) => (
               <div key={assignment.waiter_id} className="bg-[#faf7f2] p-6 rounded-lg border border-[#e2d9c8]">
-                <div className="flex items-center mb-6">
+                <div className="flex items-center mb-4">
                   <div className="h-10 w-10 rounded-full bg-[#2c1810] bg-opacity-5 flex items-center justify-center mr-3">
                     <svg className="w-5 h-5 text-[#2c1810]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -140,6 +141,11 @@ export default function Assignments() {
                     <p className="text-sm text-[#8b7355]">{assignment.tables.length} tables assigned</p>
                   </div>
                 </div>
+                {assignment.summary && (
+                  <div className="mb-6 p-4 bg-white rounded-lg border border-[#e2d9c8] text-sm text-[#2c1810] leading-relaxed">
+                    {assignment.summary}
+                  </div>
+                )}
                 
                 <div className="divide-y divide-[#e2d9c8]">
                   {assignment.tables.map((table, index) => {

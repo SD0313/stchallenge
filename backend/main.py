@@ -339,46 +339,160 @@ async def update_attendance(attendance: WaiterAttendance):
         "present_count": len(attendance.waiter_ids)
     }
 
+async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
+    if not tables:
+        return "No tables assigned for today."
+    # Gather detailed information from diner_reservations
+    table_info = []
+    total_guests = 0
+    time_range = f"{tables[0]['start_time']} to {tables[-1]['start_time']}"
+    for table in tables:
+        diner_name = table['diner_name']
+        if hasattr(app.state, 'diner_reservations') and diner_name in app.state.diner_reservations:
+            diner_data = app.state.diner_reservations[diner_name]
+            diner = diner_data['diner']
+            reservation = diner_data['reservation']
+
+            # Extract only relevant dietary information and special requests
+            dietary_info = []
+            special_requests = []
+            
+            # Process emails for dietary info and special requests
+            for email in diner.get('emails', []):
+                content = email.get('combined_thread', '')
+                if 'allerg' in content.lower() or 'diet' in content.lower():
+                    dietary_info.append(content)
+                if 'special' in content.lower() or 'request' in content.lower():
+                    special_requests.append(content)
+
+            # Get dietary tags from orders
+            dietary_tags = []
+            for order in reservation.get('orders', []):
+                dietary_tags.extend(order.get('dietary_tags', []))
+
+            # Check for special events
+            special_event = None
+            if diner.get('emails'):
+                result = await detect_special_event(diner['emails'][0].get('combined_thread', ''))
+                if result['is_special_event']:
+                    special_event = result['event_type']
+
+            table_info.append({
+                'diner': diner_name,
+                'time': reservation.get('start_time'),
+                'guests': reservation.get('number_of_people', 0),
+                'dietary_info': dietary_info,
+                'dietary_tags': dietary_tags,
+                'special_requests': special_requests,
+                'special_event': special_event
+            })
+            total_guests += reservation.get('number_of_people', 0)
+
+    # Create the prompt with the filtered data
+    prompt = f"""As a restaurant manager, write a 2-3 sentence briefing for {waiter_name} about their tables for today. Here's the information:
+
+    Overview:
+    - {total_guests} total guests across {len(tables)} tables from {time_range}
+
+    Table Details:
+    {json.dumps([{
+        'time': info['time'],
+        'guests': info['guests'],
+        'dietary_notes': info['dietary_info'],
+        'special_requests': info['special_requests'],
+        'special_event': info['special_event']
+    } for info in table_info], indent=2)}
+
+    Write a concise summary focusing on:
+    1. Total guest count and timing
+    2. Any dietary restrictions or allergies
+    3. Any special events or requests
+    
+    Keep it professional but friendly."""
+    print(f'Prompt: {prompt}')
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system",
+                "content": "You are a helpful restaurant manager providing concise briefings to waiters. Extract and summarize key information about allergies and special events from the raw data."
+            }, {
+                "role": "user",
+                "content": prompt
+            }],
+            temperature=0.7,
+            max_tokens=200
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error generating waiter summary: {e}")
+        return f"You have {total_guests} guests across {len(tables)} tables from {time_range}."
+
 @app.get("/attendance")
 async def get_attendance():
-    if not hasattr(app.state, "attendance"):
-        app.state.attendance = []
-    
-    # Include table assignments if they exist
-    assignments = []
-    if hasattr(app.state, "table_assignments") and app.state.table_assignments:
-        for waiter_id in app.state.attendance:
-            # Sort tables by time
-            tables = sorted(
-                app.state.table_assignments.get(waiter_id, []),
-                key=lambda x: parse_time(x["start_time"]).strftime("%H:%M")
-            )
-            
-            # Initialize allergies as loading state
-            for table in tables:
-                if "_diner_data" in table and "_reservation_data" in table:
-                    table["allergies"] = "Loading..."
-                    # Keep the diner and reservation data for later use
-                    if not hasattr(app.state, "diner_reservations"):
-                        app.state.diner_reservations = {}
-                    app.state.diner_reservations[table["diner_name"]] = {
-                        "diner": table["_diner_data"],
-                        "reservation": table["_reservation_data"]
+    try:
+        print("Debug: Starting get_attendance()")
+        if not hasattr(app.state, "attendance"):
+            app.state.attendance = []
+            print("Debug: Initialized empty attendance")
+        
+        # Include table assignments if they exist
+        assignments = []
+        if hasattr(app.state, "table_assignments") and app.state.table_assignments:
+            print(f"Debug: Found table_assignments: {app.state.table_assignments}")
+            for waiter_id in app.state.attendance:
+                try:
+                    print(f"Debug: Processing waiter {waiter_id}")
+                    # Sort tables by time
+                    tables = sorted(
+                        app.state.table_assignments.get(waiter_id, []),
+                        key=lambda x: parse_time(x["start_time"]).strftime("%H:%M")
+                    )
+                    print(f"Debug: Sorted tables for waiter {waiter_id}: {tables}")
+                    
+                    # Initialize allergies as loading state
+                    for table in tables:
+                        if "_diner_data" in table and "_reservation_data" in table:
+                            table["allergies"] = "Loading..."
+                            # Keep the diner and reservation data for later use
+                            if not hasattr(app.state, "diner_reservations"):
+                                app.state.diner_reservations = {}
+                            app.state.diner_reservations[table["diner_name"]] = {
+                                "diner": table["_diner_data"],
+                                "reservation": table["_reservation_data"]
+                            }
+                            # Remove temporary fields
+                            del table["_diner_data"]
+                            del table["_reservation_data"]
+                    
+                    # Generate waiter summary
+                    waiter_name = get_waiter_name(waiter_id)
+                    print(f"Debug: Generating summary for waiter {waiter_name}")
+                    summary = await generate_waiter_summary(waiter_name, tables)
+                    
+                    assignment = {
+                        "waiter_id": waiter_id,
+                        "waiter_name": waiter_name,
+                        "summary": summary,
+                        "tables": tables
                     }
-                    # Remove temporary fields
-                    del table["_diner_data"]
-                    del table["_reservation_data"]
-            
-            assignments.append({
-                "waiter_id": waiter_id,
-                "waiter_name": get_waiter_name(waiter_id),
-                "tables": tables
-            })
-    
-    return {
-        "waiter_ids": app.state.attendance,
-        "assignments": assignments
-    }
+                    print(f"Debug: Created assignment for waiter {waiter_id}: {assignment}")
+                    assignments.append(assignment)
+                except Exception as e:
+                    print(f"Debug: Error processing waiter {waiter_id}: {str(e)}")
+                    raise HTTPException(status_code=500, detail=f"Error processing waiter {waiter_id}: {str(e)}")
+        else:
+            print("Debug: No table assignments found")
+        
+        response = {
+            "waiter_ids": app.state.attendance,
+            "assignments": assignments
+        }
+        print(f"Debug: Final response: {response}")
+        return response
+    except Exception as e:
+        print(f"Debug: Error in get_attendance: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/preferences/{diner_name}")
 async def get_preferences(diner_name: str):
@@ -396,7 +510,7 @@ async def get_preferences(diner_name: str):
 
         diner_data = app.state.diner_reservations[diner_name]
         reviews = diner_data["diner"].get("reviews", [])
-        review_texts = [review.get("text", "") for review in reviews]
+        review_texts = [review.get("content", "") for review in reviews]
 
         if not review_texts:
             app.state.preferences_cache[diner_name] = {"preferences": []}
@@ -408,7 +522,7 @@ async def get_preferences(diner_name: str):
             model="gpt-4",
             messages=[{
                 "role": "system",
-                "content": "You are a helpful assistant that extracts dining preferences from reviews. Only respond with a valid JSON array of strings."
+                "content": "You are a helpful restaurant assistant that extracts generalized dining preferences from reviews. Only respond with a valid JSON array of strings."
             }, {
                 "role": "user",
                 "content": prompt
@@ -416,6 +530,10 @@ async def get_preferences(diner_name: str):
             temperature=0.7,
             max_tokens=200
         )
+        # print(f'Prompt: {prompt}')
+        # print("\nResponse from OpenAI:")
+        # print(response.choices[0].message.content)
+        
         try:
             content = response.choices[0].message.content.strip()
             if not content.startswith('[') and not content.endswith(']'):

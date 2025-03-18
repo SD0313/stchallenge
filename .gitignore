@@ -1,6 +1,7 @@
 # Data augmentation scripts and generated files
 remove_dates.py
 add_start_times.py
+playground.py
 
 # Python and FastAPI
 __pycache__/
