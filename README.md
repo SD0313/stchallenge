@@ -53,9 +53,6 @@ OPENAI_API_KEY=your_openai_api_key_here
 - `GET /allergies/{diner_name}`: Get allergy information for a specific diner
 - `GET /preferences/{diner_name}`: Get dining preferences and special requests for a specific diner
 
-### Health Check
-- `GET /`: Root endpoint, returns server status
-- `GET /health`: Health check endpoint
 
 ## Development
 
