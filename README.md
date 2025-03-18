@@ -2,21 +2,6 @@
 
 A modern fine dining restaurant management system built with TypeScript, React, Remix, and FastAPI. Features AI-powered table assignments and staff management.
 
-## Features
-
-- **Staff Management**
-  - Real-time attendance tracking
-  - AI-powered table assignments
-  - Elegant UI with responsive design
-  - Detailed table and order information
-
-- **AI Integration**
-  - OpenAI GPT-4 for intelligent table distribution
-  - Optimizes for:
-    - Even distribution of tables
-    - Minimized time overlaps
-    - Party size and order complexity
-
 ## Tech Stack
 
 - **Frontend**
@@ -29,7 +14,6 @@ A modern fine dining restaurant management system built with TypeScript, React, 
   - Python
   - FastAPI
   - OpenAI API
-  - SQLAlchemy
 
 ## Setup
 
@@ -59,21 +43,23 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ## API Endpoints
 
+### Staff and Table Management
 - `GET /attendance`: Get current staff attendance and table assignments
 - `POST /attendance`: Update staff attendance and trigger AI table reassignment
 - `GET /dining-data`: Get restaurant dining data
+- `GET /daily-stats`: Get daily statistics including total reservations and guests
 
-## Data Structure
+### Customer Information
+- `GET /allergies/{diner_name}`: Get allergy information for a specific diner
+- `GET /preferences/{diner_name}`: Get dining preferences and special requests for a specific diner
 
-The system uses a fine dining dataset that includes:
-- Diner information
-- Reservations
-- Order details
-- Dietary preferences
+### Health Check
+- `GET /`: Root endpoint, returns server status
+- `GET /health`: Health check endpoint
 
 ## Development
 
-- Frontend runs on `http://localhost:5174`
+- Frontend runs on `http://localhost:5173`
 - Backend runs on `http://localhost:8000`
 - Uses CORS for local development
 
