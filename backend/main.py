@@ -419,7 +419,6 @@ async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
     3. Any special events or requests
     4. Any expected large parties
     
-    Make the summary organized and include bulleted points for the waiter to keep in mind.
     Keep it professional but friendly. End the summary with a "Good Luck!"."""
     print(f'Generating summary for {waiter_name}...')
     try:
