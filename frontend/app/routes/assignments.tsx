@@ -57,6 +57,41 @@ const formatTime = (timeStr: string) => {
   return timeStr;
 };
 
+const formatSummary = (summary: string) => {
+  // Split the text into sections based on line breaks
+  const sections = summary.split('\n').map(line => line.trim()).filter(Boolean);
+  
+  return sections.map((section, index) => {
+    // Check if the section starts with a bullet point
+    if (section.startsWith('-')) {
+      // Remove the bullet and trim
+      const content = section.substring(1).trim();
+      // If it starts with a category (like "Dietary Restrictions:"), make it bold
+      if (content.includes(':')) {
+        const [category, details] = content.split(':');
+        return (
+          <div key={index} className="flex items-start space-x-2 mb-2">
+            <span className="text-[#8b7355] mt-1">•</span>
+            <span>
+              <strong className="text-[#2c1810]">{category}:</strong>
+              {details}
+            </span>
+          </div>
+        );
+      }
+      // Regular bullet point
+      return (
+        <div key={index} className="flex items-start space-x-2 mb-2">
+          <span className="text-[#8b7355] mt-1">•</span>
+          <span>{content}</span>
+        </div>
+      );
+    }
+    // Non-bullet text (like the introduction)
+    return <p key={index} className="mb-3">{section}</p>;
+  });
+};
+
 export default function Assignments() {
   const { assignments, stats, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
@@ -143,7 +178,7 @@ export default function Assignments() {
                 </div>
                 {assignment.summary && (
                   <div className="mb-6 p-4 bg-white rounded-lg border border-[#e2d9c8] text-sm text-[#2c1810] leading-relaxed">
-                    {assignment.summary}
+                    {formatSummary(assignment.summary)}
                   </div>
                 )}
                 

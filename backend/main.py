@@ -310,6 +310,16 @@ async def init_attendance():
 async def update_attendance(attendance: WaiterAttendance):
     app.state.attendance = attendance.waiter_ids
     
+    # Clear any existing assignments, summary cache, and diner reservations
+    if hasattr(app.state, "table_assignments"):
+        app.state.table_assignments = {}
+    if hasattr(app.state, "waiter_summaries"):
+        app.state.waiter_summaries = {}
+    if hasattr(app.state, "diner_reservations"):
+        app.state.diner_reservations = {}
+    if hasattr(app.state, "summary_cache"):
+        app.state.summary_cache = {}
+    
     # When attendance is updated, reassign tables
     if hasattr(app.state, "dining_data"):
         assignments = await assign_tables(attendance.waiter_ids, app.state.dining_data)
@@ -373,9 +383,9 @@ async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
             # Check for special events
             special_event = None
             if diner.get('emails'):
-                result = await detect_special_event(diner['emails'][0].get('combined_thread', ''))
-                if result['is_special_event']:
-                    special_event = result['event_type']
+                # result = await detect_special_event(diner['emails'][0].get('combined_thread', ''))
+                # if result['is_special_event']:
+                special_event = diner['emails'][0].get('combined_thread', '') # result['event_type']
 
             table_info.append({
                 'diner': diner_name,
@@ -396,7 +406,7 @@ async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
 
     Table Details:
     {json.dumps([{
-        'time': info['time'],
+        'diner': info['diner'],
         'guests': info['guests'],
         'dietary_notes': info['dietary_info'],
         'special_requests': info['special_requests'],
@@ -407,9 +417,11 @@ async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
     1. Total guest count and timing
     2. Any dietary restrictions or allergies
     3. Any special events or requests
+    4. Any expected large parties
     
-    Keep it professional but friendly."""
-    print(f'Prompt: {prompt}')
+    Make the summary organized and include bulleted points for the waiter to keep in mind.
+    Keep it professional but friendly. End the summary with a "Good Luck!"."""
+    print(f'Generating summary for {waiter_name}...')
     try:
         response = await openai_client.chat.completions.create(
             model="gpt-4",
@@ -425,30 +437,29 @@ async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"Error generating waiter summary: {e}")
+        print(f"Error generating waiter summary for {waiter_name}: {e}")
         return f"You have {total_guests} guests across {len(tables)} tables from {time_range}."
 
 @app.get("/attendance")
 async def get_attendance():
     try:
-        print("Debug: Starting get_attendance()")
         if not hasattr(app.state, "attendance"):
             app.state.attendance = []
-            print("Debug: Initialized empty attendance")
         
         # Include table assignments if they exist
         assignments = []
         if hasattr(app.state, "table_assignments") and app.state.table_assignments:
-            print(f"Debug: Found table_assignments: {app.state.table_assignments}")
+            # Initialize summary cache if it doesn't exist
+            if not hasattr(app.state, "waiter_summaries"):
+                app.state.waiter_summaries = {}
+                
             for waiter_id in app.state.attendance:
                 try:
-                    print(f"Debug: Processing waiter {waiter_id}")
                     # Sort tables by time
                     tables = sorted(
                         app.state.table_assignments.get(waiter_id, []),
                         key=lambda x: parse_time(x["start_time"]).strftime("%H:%M")
                     )
-                    print(f"Debug: Sorted tables for waiter {waiter_id}: {tables}")
                     
                     # Initialize allergies as loading state
                     for table in tables:
@@ -465,10 +476,15 @@ async def get_attendance():
                             del table["_diner_data"]
                             del table["_reservation_data"]
                     
-                    # Generate waiter summary
                     waiter_name = get_waiter_name(waiter_id)
-                    print(f"Debug: Generating summary for waiter {waiter_name}")
-                    summary = await generate_waiter_summary(waiter_name, tables)
+                    # Use cached summary if available
+                    if waiter_id in app.state.waiter_summaries:
+                        summary = app.state.waiter_summaries[waiter_id]
+                    else:
+                        # Generate new summary only if not cached
+                        print(f"Debug: Generating summary for waiter {waiter_name}")
+                        summary = await generate_waiter_summary(waiter_name, tables)
+                        app.state.waiter_summaries[waiter_id] = summary
                     
                     assignment = {
                         "waiter_id": waiter_id,
@@ -476,7 +492,6 @@ async def get_attendance():
                         "summary": summary,
                         "tables": tables
                     }
-                    print(f"Debug: Created assignment for waiter {waiter_id}: {assignment}")
                     assignments.append(assignment)
                 except Exception as e:
                     print(f"Debug: Error processing waiter {waiter_id}: {str(e)}")
@@ -488,7 +503,6 @@ async def get_attendance():
             "waiter_ids": app.state.attendance,
             "assignments": assignments
         }
-        print(f"Debug: Final response: {response}")
         return response
     except Exception as e:
         print(f"Debug: Error in get_attendance: {str(e)}")
