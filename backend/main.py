@@ -6,15 +6,23 @@ from datetime import datetime
 import json
 import os
 from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+from openai import AsyncOpenAI
 
 # Load environment variables
 load_dotenv()
 
-# Configure OpenAI
-from openai import AsyncOpenAI
-client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# Create OpenAI client
+openai_client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-app = FastAPI(title="French Laudure API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: nothing to do
+    yield
+    # Shutdown: close OpenAI client
+    await openai_client.close()
+
+app = FastAPI(title="French Laudure API", lifespan=lifespan)
 
 # Configure CORS
 app.add_middleware(
@@ -72,7 +80,7 @@ async def extract_allergies(diner: dict, reservation: dict) -> str:
     """
 
     try:
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model="gpt-4",
             messages=[{
                 "role": "system",
@@ -223,21 +231,41 @@ async def load_data():
         app.state.dining_data = {"diners": []}
     app.state.table_assignments = {}
 
-def detect_special_event(email_content: str) -> bool:
-    # List of keywords that indicate special events
-    special_event_keywords = [
-        'birthday', 'anniversary', 'celebration', 'promotion',
-        'graduate', 'graduation', 'engagement', 'wedding',
-        'retirement', 'congratulation', 'achievement',
-        'special occasion', 'milestone', 'commemorate',
-        'honor', 'celebrate', 'party', 'ceremony'
-    ]
-    
-    # Convert to lowercase for case-insensitive matching
-    email_lower = email_content.lower()
-    
-    # Check for any keyword in the email
-    return any(keyword in email_lower for keyword in special_event_keywords)
+async def detect_special_event(email_content: str) -> dict:
+    if not email_content:
+        return {"is_special_event": False, "event_type": None}
+
+    prompt = f"""Analyze the following email content and determine if it indicates a special event/request (e.g., birthday, anniversary, business meeting). 
+    If they have a special request (i.e. being in a rush) for the waiter to consider, return that as well.
+    If it is a special event, respond with a JSON object containing 'is_special_event': true and 'event_type': <type>.
+    If it is not a special event, respond with a JSON object containing 'is_special_event': false and 'event_type': null.
+
+    Email Content:
+    {email_content}
+    """
+
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system",
+                "content": "You are a helpful assistant that detects special events from email content. Only respond with a JSON object."
+            }, {
+                "role": "user",
+                "content": prompt
+            }],
+            temperature=0.7,
+            max_tokens=100
+        )
+
+        result = json.loads(response.choices[0].message.content)
+        return {
+            "is_special_event": result.get("is_special_event", False),
+            "event_type": result.get("event_type")
+        }
+    except Exception as e:
+        print(f"Error detecting special event: {e}")
+        return {"is_special_event": False, "event_type": None}
 
 @app.get("/daily-stats")
 def get_daily_stats():
@@ -259,11 +287,9 @@ def get_daily_stats():
         total_reservations += len(reservations)
         total_guests += sum(r.get("number_of_people", 0) for r in reservations)
 
-        # Check emails for special events
-        for email in diner.get("emails", []):
-            if detect_special_event(email.get("combined_thread", "")):
-                special_events += 1
-                break  # Only count one special event per diner
+    # Get special events count from cache
+    if hasattr(app.state, "special_events_cache"):
+        special_events = sum(1 for value in app.state.special_events_cache.values() if value is not None)
 
     return {
         "total_reservations": total_reservations,
@@ -354,6 +380,62 @@ async def get_attendance():
         "assignments": assignments
     }
 
+@app.get("/preferences/{diner_name}")
+async def get_preferences(diner_name: str):
+    # Initialize preferences cache if it doesn't exist
+    if not hasattr(app.state, "preferences_cache"):
+        app.state.preferences_cache = {}
+
+    # Check cache first
+    if diner_name in app.state.preferences_cache:
+        return app.state.preferences_cache[diner_name]
+
+    try:
+        if not hasattr(app.state, "diner_reservations") or diner_name not in app.state.diner_reservations:
+            raise HTTPException(status_code=404, detail="Diner not found")
+
+        diner_data = app.state.diner_reservations[diner_name]
+        reviews = diner_data["diner"].get("reviews", [])
+        review_texts = [review.get("text", "") for review in reviews]
+
+        if not review_texts:
+            app.state.preferences_cache[diner_name] = {"preferences": []}
+            return app.state.preferences_cache[diner_name]
+
+        prompt = f"Based on these reviews from other restaurants: {' '.join(review_texts)}\n\nExtract dining preferences that would be relevant to a French fine dining restaurant. Only include preferences that are generalizable to French cuisine and fine dining. Format the response as a JSON array of strings, each string being a specific preference. If no relevant preferences are found, return an empty array."
+
+        response = await openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{
+                "role": "system",
+                "content": "You are a helpful assistant that extracts dining preferences from reviews. Only respond with a valid JSON array of strings."
+            }, {
+                "role": "user",
+                "content": prompt
+            }],
+            temperature=0.7,
+            max_tokens=200
+        )
+        try:
+            content = response.choices[0].message.content.strip()
+            if not content.startswith('[') and not content.endswith(']'):
+                content = f"[{content}]"
+            preferences = json.loads(content)
+            if not isinstance(preferences, list):
+                preferences = []
+            # Clean up preferences
+            preferences = [p.strip('"') for p in preferences if isinstance(p, str)]
+        except (json.JSONDecodeError, AttributeError, IndexError) as e:
+            print(f"Error parsing preferences: {e}")
+            print(f"Raw response: {response.choices[0].message.content if response.choices else 'No content'}")
+            preferences = []
+        app.state.preferences_cache[diner_name] = {"preferences": preferences}
+        return app.state.preferences_cache[diner_name]
+    except Exception as e:
+        print(f"Error getting preferences: {str(e)}")
+        app.state.preferences_cache[diner_name] = {"preferences": []}
+        return app.state.preferences_cache[diner_name]
+
 @app.get("/allergies/{diner_name}")
 async def get_allergies(diner_name: str):
     try:
@@ -362,7 +444,23 @@ async def get_allergies(diner_name: str):
 
         diner_data = app.state.diner_reservations[diner_name]
         allergies = await extract_allergies(diner_data["diner"], diner_data["reservation"])
-        return {"allergies": allergies}
+
+        # Initialize special events cache if it doesn't exist
+        if not hasattr(app.state, "special_events_cache"):
+            app.state.special_events_cache = {}
+
+        # Check cache first
+        if diner_name not in app.state.special_events_cache:
+            # Get first email's content for special event detection
+            emails = diner_data["diner"].get("emails", [])
+            email_content = emails[0].get("combined_thread", "") if emails else ""
+            result = await detect_special_event(email_content)
+            app.state.special_events_cache[diner_name] = result["event_type"] if result["is_special_event"] else None
+
+        return {
+            "allergies": allergies,
+            "special_event": app.state.special_events_cache[diner_name]
+        }
     except Exception as e:
         print(f"Error getting allergies: {e}")
         raise HTTPException(status_code=500, detail=str(e))

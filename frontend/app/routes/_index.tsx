@@ -145,7 +145,7 @@ export default function Index() {
         {stats && (
           <div className="mb-12 bg-white rounded-lg shadow-lg border border-[#e2d9c8] p-6">
             <h3 className="text-2xl font-serif text-[#2c1810] text-center mb-6">Today's Customers at a Glance</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">
               <div className="p-4 rounded-lg bg-[#faf7f2]">
                 <div className="text-4xl font-bold text-[#2c1810]">{stats.total_reservations}</div>
                 <div className="text-sm font-medium text-[#65544a] mt-2">Today's Reservations</div>
@@ -153,10 +153,6 @@ export default function Index() {
               <div className="p-4 rounded-lg bg-[#faf7f2]">
                 <div className="text-4xl font-bold text-[#2c1810]">{stats.total_guests}</div>
                 <div className="text-sm font-medium text-[#65544a] mt-2">Expected Guests</div>
-              </div>
-              <div className="p-4 rounded-lg bg-[#faf7f2]">
-                <div className="text-4xl font-bold text-[#2c1810]">{stats.special_events}</div>
-                <div className="text-sm font-medium text-[#65544a] mt-2">Special Events</div>
               </div>
             </div>
             <h3 className="text-2xl font-serif text-[#2c1810] text-center mb-6 mt-6">Let's get started!</h3>

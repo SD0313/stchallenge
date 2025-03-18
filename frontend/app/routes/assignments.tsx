@@ -61,6 +61,9 @@ export default function Assignments() {
   const navigate = useNavigate();
   const [expandedTables, setExpandedTables] = useState<{[key: string]: boolean}>({});
   const [allergies, setAllergies] = useState<{[key: string]: string}>({});
+  const [specialEvents, setSpecialEvents] = useState<{[key: string]: string | null}>({});
+  const [preferences, setPreferences] = useState<{[key: string]: string[]}>({});
+  const [loadingPreferences, setLoadingPreferences] = useState<{[key: string]: boolean}>({});
 
   // Tables are already sorted by time from the backend
   const sortedAssignments = assignments;
@@ -101,7 +104,7 @@ export default function Assignments() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {stats && (
           <div className="mb-8 bg-white rounded-lg shadow-lg border border-[#e2d9c8] p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-center">
               <div className="p-4 rounded-lg bg-[#faf7f2]">
                 <div className="text-4xl font-bold text-[#2c1810]">{stats.total_reservations}</div>
                 <div className="text-sm font-medium text-[#65544a] mt-2">Today's Reservations</div>
@@ -109,10 +112,6 @@ export default function Assignments() {
               <div className="p-4 rounded-lg bg-[#faf7f2]">
                 <div className="text-4xl font-bold text-[#2c1810]">{stats.total_guests}</div>
                 <div className="text-sm font-medium text-[#65544a] mt-2">Expected Guests</div>
-              </div>
-              <div className="p-4 rounded-lg bg-[#faf7f2]">
-                <div className="text-4xl font-bold text-[#2c1810]">{stats.special_events}</div>
-                <div className="text-sm font-medium text-[#65544a] mt-2">Special Events</div>
               </div>
             </div>
           </div>
@@ -154,24 +153,83 @@ export default function Assignments() {
                             setExpandedTables(prev => {
                               const newState = { ...prev, [tableKey]: !prev[tableKey] };
                               
-                              // If expanding and allergies haven't been loaded
-                              if (newState[tableKey] && !allergies[tableKey]) {
-                                // Load allergies
-                                fetch(`http://localhost:8000/allergies/${encodeURIComponent(table.diner_name)}`)
-                                .then(response => response.json())
-                                .then(data => {
+                              // If expanding and data hasn't been loaded
+                              if (newState[tableKey]) {
+                                if (!allergies[tableKey]) {
+                                  // Set loading state for allergies and special events
                                   setAllergies(prev => ({
                                     ...prev,
-                                    [tableKey]: data.allergies
+                                    [tableKey]: 'Loading...'
                                   }));
-                                })
-                                .catch(error => {
-                                  console.error('Error fetching allergies:', error);
-                                  setAllergies(prev => ({
+                                  setSpecialEvents(prev => ({
                                     ...prev,
-                                    [tableKey]: 'Error loading allergies'
+                                    [tableKey]: 'Loading...'
                                   }));
-                                });
+
+                                  // Load allergies and special events
+                                  fetch(`http://localhost:8000/allergies/${encodeURIComponent(table.diner_name)}`)
+                                  .then(response => response.json())
+                                  .then(data => {
+                                    setAllergies(prev => ({
+                                      ...prev,
+                                      [tableKey]: data.allergies
+                                    }));
+                                    setSpecialEvents(prev => ({
+                                      ...prev,
+                                      [tableKey]: data.special_event || 'None'
+                                    }));
+                                  })
+                                  .catch(error => {
+                                    console.error('Error fetching allergies:', error);
+                                    setAllergies(prev => ({
+                                      ...prev,
+                                      [tableKey]: 'Error loading allergies'
+                                    }));
+                                    setSpecialEvents(prev => ({
+                                      ...prev,
+                                      [tableKey]: 'Error loading special events'
+                                    }));
+                                  });
+                                }
+
+                                if (!preferences[tableKey]) {
+                                  // Set loading state for preferences
+                                  setLoadingPreferences(prev => ({
+                                    ...prev,
+                                    [tableKey]: true
+                                  }));
+
+                                  // Load preferences
+                                  fetch(`http://localhost:8000/preferences/${encodeURIComponent(table.diner_name)}`)
+                                  .then(response => response.json())
+                                  .then(data => {
+                                    if (data && Array.isArray(data.preferences)) {
+                                      setPreferences(prev => ({
+                                        ...prev,
+                                        [tableKey]: data.preferences
+                                      }));
+                                    } else {
+                                      console.error('Invalid preferences data:', data);
+                                      setPreferences(prev => ({
+                                        ...prev,
+                                        [tableKey]: []
+                                      }));
+                                    }
+                                  })
+                                  .catch(error => {
+                                    console.error('Error fetching preferences:', error);
+                                    setPreferences(prev => ({
+                                      ...prev,
+                                      [tableKey]: []
+                                    }));
+                                  })
+                                  .finally(() => {
+                                    setLoadingPreferences(prev => ({
+                                      ...prev,
+                                      [tableKey]: false
+                                    }));
+                                  });
+                                }
                               }
                               
                               return newState;
@@ -216,6 +274,27 @@ export default function Assignments() {
                                 <span className="font-medium text-[#2c1810]">Allergies/Dietary Restrictions:</span>
                                 <span className="ml-2 text-[#65544a]">{allergies[tableKey] || table.allergies}</span>
                               </div>
+                              <div className="mb-2">
+                                <span className="font-medium text-[#2c1810]">Special Event:</span>
+                                <span className="ml-2 text-[#65544a] capitalize">
+                                  {specialEvents[tableKey] || 'Loading...'}
+                                </span>
+                              </div>
+                              {loadingPreferences[tableKey] ? (
+                                <div className="mb-2">
+                                  <span className="font-medium text-[#2c1810]">Dining Preferences:</span>
+                                  <span className="ml-2 text-[#65544a]">Loading...</span>
+                                </div>
+                              ) : preferences[tableKey]?.length > 0 ? (
+                                <div className="mb-2">
+                                  <span className="font-medium text-[#2c1810]">Dining Preferences:</span>
+                                  <ul className="mt-1 space-y-1 pl-4 list-disc">
+                                    {preferences[tableKey].map((pref, i) => (
+                                      <li key={i} className="text-[#65544a]">{pref}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null}
                               <div>
                                 <span className="font-medium text-[#2c1810]">Orders:</span>
                                 <ul className="mt-1 space-y-1">
