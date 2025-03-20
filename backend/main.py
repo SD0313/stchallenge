@@ -419,7 +419,20 @@ async def generate_waiter_summary(waiter_name: str, tables: List[dict]) -> str:
     3. Any special events or requests
     4. Any expected large parties
     
-    Keep it professional but friendly. End the summary with a "Good Luck!"."""
+    Keep it professional but friendly. Build excitement for the day. Don't make it just a list of tasks. 
+    Make it one concise paragraph. End the summary with a "Good Luck!". Follow the template below:
+    
+    Justin, you'll be serving 40 guests across 18 tables from 
+    12:00 PM to 8:30 PM today. Please note some dietary restrictions: 
+    Ximena Zhao's partner is lactose intolerant, Ursula Wood is on a 
+    low-sodium diet, and Nora Owens prefers to avoid shellfish and fish 
+    sauce. Many guests are celebrating special events and have requested 
+    subtle gestures: Olivia Morris and Jake Lee both plan to announce 
+    pregnancies, Gabriella Ingram's nephew won a scholarship, and Alex 
+    Cunningham and Karen Wu are celebrating birthdays. Diana Flores will 
+    bring her 10-year old daughter for her first French cuisine experience. 
+    Other guests have requested specific wines, permission to take photos, 
+    or specific table placements due to mobility issues. No large parties today, mostly tables of two. Good luck!"""
     print(f'Generating summary for {waiter_name}...')
     try:
         response = await openai_client.chat.completions.create(
